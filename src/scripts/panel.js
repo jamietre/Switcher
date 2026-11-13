@@ -20,7 +20,9 @@ document.onreadystatechange = function () {
 //Fire 2th : gotProxyType get proxy type then pass type to currentProxyType function
 function gotProxyType(popupURL) {
   browser.proxy.settings.get({}).then(function (proxyInfo) {
-    setupSwitcher(proxyInfo.value.proxyType);
+    // Pass the whole ProxyConfig: the panel needs the live http/ssl/socks
+    // values, not just the mode, to show which proxy is in use.
+    setupSwitcher(proxyInfo.value);
   });
 }
 

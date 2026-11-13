@@ -1,10 +1,140 @@
+// --- Switcher storage / browser-state helpers ---------------------------
+//
+// Firefox's own proxy configuration (Settings > Network Settings, i.e. the
+// network.proxy.* prefs) is the source of truth. Switcher used to treat its
+// localStorage copy as authoritative, which meant a proxy configured in
+// Firefox itself was invisible to the panel and got overwritten with blanks
+// the first time the user switched modes.
+
+const SWITCHER_STORAGE_KEY = "SwitcherManualProxyConfig";
+
+function readStoredConfig() {
+  let raw = localStorage.getItem(SWITCHER_STORAGE_KEY);
+  if (!raw) {
+    return null;
+  }
+  try {
+    return JSON.parse(raw);
+  } catch (error) {
+    console.error("Switcher: stored config is not valid JSON, ignoring", error);
+    return null;
+  }
+}
+
+function writeStoredConfig(config) {
+  localStorage.setItem(SWITCHER_STORAGE_KEY, JSON.stringify(config));
+}
+
+// True when a config actually names a proxy server for any protocol.
+function hasProxyHost(config) {
+  return Boolean(config && (config.http || config.ssl || config.socks));
+}
+
+// Build a manual-mode config to hand to Firefox. Prefers Switcher's stored
+// config, but falls back to whatever Firefox already has so that switching
+// back on restores an externally configured proxy instead of erasing it.
+function resolveManualConfig(browserValue) {
+  let stored = readStoredConfig();
+  if (hasProxyHost(stored)) {
+    stored.proxyType = "manual";
+    return stored;
+  }
+
+  let adopted = {
+    proxyType: "manual",
+    http: (browserValue && browserValue.http) || "",
+    ssl: (browserValue && browserValue.ssl) || "",
+    socks: (browserValue && browserValue.socks) || "",
+    socksVersion: (browserValue && browserValue.socksVersion) || 4,
+    passthrough: (browserValue && browserValue.passthrough) || "",
+  };
+  writeStoredConfig(adopted);
+  return adopted;
+}
+
+// proxy.settings.set() rejects unless the add-on is allowed to run in private
+// windows (Firefox throws "proxy.settings requires private browsing
+// permission."). Every call used to ignore that rejection, so a failed switch
+// left the badge showing a mode the browser had never entered.
+function applyProxySetting(value) {
+  return browser.proxy.settings.set({ value: value }).then(
+    function () {
+      clearSwitcherError();
+      return true;
+    },
+    function (error) {
+      let message = String((error && error.message) || error);
+      console.error("Switcher: could not apply proxy settings:", message);
+
+      if (/private browsing/i.test(message)) {
+        showSwitcherError(
+          "Switcher needs \u201cRun in Private Windows\u201d enabled in " +
+            "about:addons before it can change the proxy.",
+        );
+      } else if (/Policies manager/i.test(message)) {
+        showSwitcherError("Proxy settings are locked by an enterprise policy.");
+      } else {
+        showSwitcherError("Could not change the proxy: " + message);
+      }
+
+      // Re-sync the UI with what the browser really has.
+      refreshFromBrowser();
+      return false;
+    },
+  );
+}
+
+// Panel-only; the background page has no such element, hence the null guard.
+function showSwitcherError(message) {
+  let target = document.getElementById("switcher-error");
+  if (!target) {
+    return;
+  }
+  target.textContent = message;
+  target.classList.remove("hide-element");
+}
+
+function clearSwitcherError() {
+  let target = document.getElementById("switcher-error");
+  if (!target) {
+    return;
+  }
+  target.textContent = "";
+  target.classList.add("hide-element");
+}
+
+// Re-read Firefox's live settings and repaint whatever UI is present.
+function refreshFromBrowser() {
+  return browser.proxy.settings.get({}).then(function (proxyInfo) {
+    let hasPanel =
+      typeof document !== "undefined" &&
+      document.getElementById("noproxy-id") !== null;
+
+    if (hasPanel) {
+      setupSwitcher(proxyInfo.value);
+    } else if (typeof startupProxyType === "function") {
+      // Background page only.
+      startupProxyType(proxyInfo.value.proxyType);
+    }
+    return proxyInfo.value;
+  });
+}
+
 //Fire when user clicked on noproxy button
 function setNoProxySetting() {
   let noProxySetting = {
     proxyType: "none",
   };
 
-  browser.proxy.settings.set({ value: noProxySetting });
+  // Remember the current proxy before turning it off, so switching back on
+  // can restore it even if Switcher never configured it in the first place.
+  browser.proxy.settings.get({}).then(function (proxyInfo) {
+    if (!hasProxyHost(readStoredConfig())) {
+      resolveManualConfig(proxyInfo.value);
+    }
+    applyProxySetting(noProxySetting);
+  });
+
   // disable active green pint on system proxy / manual proxy button
   currectActiveButton("noproxy-id");
 
@@ -47,7 +177,7 @@ function setSystemProxySetting() {
     };
   }
 
-  browser.proxy.settings.set({ value: systemProxySetting });
+  applyProxySetting(systemProxySetting);
 
   // disable active green point on no proxy / manual proxy button
   currectActiveButton("systemproxy-id");
@@ -80,34 +210,31 @@ function setManualProxySetting() {
   // updating no proxy / system proxy  / manual proxy text
   setSwitcherButtonIsSet("manualproxy");
 
-  // Checking LocalStorage Config is exist or not
-  let isSwitcherLocalStorageExist = localStorage.getItem(
-    "SwitcherManualProxyConfig",
-  );
+  // Resolve the manual config against Firefox's live settings, so a proxy that
+  // was configured in Firefox's own Settings page is adopted rather than
+  // clobbered with an empty config.
+  browser.proxy.settings.get({}).then(function (proxyInfo) {
+    let manualProxySetting = resolveManualConfig(proxyInfo.value);
 
-  // Making sure localStorage Config for Swithcer is exist
-  if (!isSwitcherLocalStorageExist) {
-    // call manualProxyFormHandler because if LocalStorage isn't exist it make new LocalStorage
-    // and open form for user to config proxy setting for manual
-    manualProxyFormHandler();
-  } else {
-    // get manualProxySetting from LocalStorage and update firefox manual proxy setting
-    let manualProxySetting = JSON.parse(
-      localStorage.getItem("SwitcherManualProxyConfig"),
-    );
-    manualProxySetting.proxyType = "manual";
-    browser.proxy.settings.set({ value: manualProxySetting });
+    if (!hasProxyHost(manualProxySetting)) {
+      // Nothing to switch to yet -- open the form so the user can enter one.
+      manualProxyFormHandler();
+      showCurrentHttpProxyThatIsSet("");
+      return;
+    }
 
-    // Todo fix this
-    // update localStorage
-    // localStorage.setItem(
-    //   "SwitcherManualProxyConfig",
-    //   JSON.stringify(manualProxySetting),
-    // );
-
-    // show current http proxy that is set as http
-    showCurrentHttpProxyThatIsSet(manualProxySetting.http);
-  }
+    applyProxySetting(manualProxySetting).then(function (ok) {
+      if (ok) {
+        writeStoredConfig(manualProxySetting);
+        // show current http proxy that is set as http
+        showCurrentHttpProxyThatIsSet(
+          manualProxySetting.http ||
+            manualProxySetting.ssl ||
+            manualProxySetting.socks,
+        );
+      }
+    });
+  });
 
   //panel shortcut handeling
   deactiveShortcutActive("manualproxy-shortcut");
@@ -139,31 +266,24 @@ function manualProxyFormHandler() {
       .classList.remove("manualproxy-config-button-active");
   }
 
-  // Check LocalStorage Config is exist or not
-  let isSwitcherLocalStorageExist = localStorage.getItem(
-    "SwitcherManualProxyConfig",
-  );
+  // Open the form against the best config we have. If Switcher has nothing
+  // stored, adopt Firefox's live settings first, so a proxy configured in
+  // Firefox's own Settings > Network Settings shows up pre-filled here
+  // instead of the form opening blank.
+  let stored = readStoredConfig();
+  if (hasProxyHost(stored)) {
+    fillManualProxyForm(stored);
+    return;
+  }
 
-  // Making a localStorage Config if it's not exist
-  if (!isSwitcherLocalStorageExist) {
-    let manualProxySetting = {
-      proxyType: "manual",
-      http: "", // for http
-      ssl: "", //for https
-      socks: "", // for socks
-      socksVersion: 4, // for socks version
-      passthrough: "", // for no proxy for
-    };
-    localStorage.setItem(
-      "SwitcherManualProxyConfig",
-      JSON.stringify(manualProxySetting),
-    );
+  browser.proxy.settings.get({}).then(function (proxyInfo) {
+    fillManualProxyForm(resolveManualConfig(proxyInfo.value));
+  });
+}
 
-    // Setup Form inputs Events
-    setManualProxyFormEvents();
-  } else {
-    // Fill form fields with LocalStorage config data
-    let getLocalStorageObject = JSON.parse(isSwitcherLocalStorageExist);
+// Populate the manual-proxy form fields from a config object.
+function fillManualProxyForm(getLocalStorageObject) {
+  {
     let getAllInputField = document.querySelectorAll("input[type='text']");
 
     let getHttpUrlValue;
@@ -218,7 +338,14 @@ function manualProxyFormHandler() {
 }
 
 //Fire 3th and checked current proxy type and update popup button list current proxy used
-function setupSwitcher(proxyType) {
+// Accepts the full ProxyConfig value from browser.proxy.settings.get() so the
+// panel can report the proxy Firefox is really using, whoever configured it.
+function setupSwitcher(browserValue) {
+  let proxyType =
+    browserValue && typeof browserValue === "object"
+      ? browserValue.proxyType
+      : browserValue;
+
   // Get Os Name through navigator.userAgent API
   let osName = "unknown";
 
@@ -276,18 +403,27 @@ function setupSwitcher(proxyType) {
     //panel shortcut handeling
     deactiveShortcutActive("manualproxy-shortcut");
 
-    // Checking LocalStorage Config is exist or not
-    let isSwitcherLocalStorageExist = localStorage.getItem(
-      "SwitcherManualProxyConfig",
-    );
-
-    if (isSwitcherLocalStorageExist) {
-      let manualProxySetting = JSON.parse(
-        localStorage.getItem("SwitcherManualProxyConfig"),
+    // Show the proxy Firefox is actually using. Reading it from the live
+    // settings rather than localStorage means a proxy set up in Firefox's own
+    // Settings page is displayed too.
+    if (browserValue && typeof browserValue === "object") {
+      // Keep Switcher's stored copy in step with the browser.
+      if (!hasProxyHost(readStoredConfig())) {
+        resolveManualConfig(browserValue);
+      }
+      showCurrentHttpProxyThatIsSet(
+        browserValue.http || browserValue.ssl || browserValue.socks,
       );
-      // show current http proxy that is set as http
-      showCurrentHttpProxyThatIsSet(manualProxySetting.http);
+    } else {
+      let stored = readStoredConfig();
+      showCurrentHttpProxyThatIsSet(stored && stored.http);
     }
+  } else if (proxyType == "autoDetect" || proxyType == "autoConfig") {
+    // Previously these two modes fell through unhandled, leaving the badge
+    // showing whatever it said before. "A" already existed in setBadgeText().
+    setBadgeText("A");
+    setSwitcherIconSatus("systemproxy");
+    hideCurrentHttpProxyThatIsSet();
   }
 }
 
@@ -403,19 +539,32 @@ function setSwitcherButtonIsSet(targetId) {
 }
 
 function showCurrentHttpProxyThatIsSet(httpValue) {
-  if (httpValue && httpValue.length <= 22) {
-    // Show current manual proxy that set as http
-    document
-      .getElementById("manualproxy-current-http-setting")
-      .classList.remove("hide-element");
-
-    httpValue = httpValue.replaceAll("http://", "");
-    httpValue = httpValue.replaceAll("https://", "");
-    httpValue = httpValue.replaceAll("://", "");
-
+  // No proxy configured yet -> keep the label hidden and blank, so a stale or
+  // placeholder value can never be mistaken for a live setting.
+  if (!httpValue) {
     document.getElementById("manualproxy-show-current-http-proxy").innerText =
-      httpValue;
+      "";
+    hideCurrentHttpProxyThatIsSet();
+    return;
   }
+
+  // Show current manual proxy that set as http
+  document
+    .getElementById("manualproxy-current-http-setting")
+    .classList.remove("hide-element");
+
+  httpValue = httpValue.replaceAll("http://", "");
+  httpValue = httpValue.replaceAll("https://", "");
+  httpValue = httpValue.replaceAll("://", "");
+
+  const label = document.getElementById("manualproxy-show-current-http-proxy");
+
+  // Long values used to be dropped entirely, which left the panel showing
+  // nothing while a proxy really was set. Truncate for display instead and
+  // keep the full value in the tooltip.
+  label.innerText =
+    httpValue.length <= 22 ? httpValue : httpValue.slice(0, 21) + "\u2026";
+  label.title = httpValue;
 }
 
 function hideCurrentHttpProxyThatIsSet() {

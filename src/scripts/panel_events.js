@@ -37,7 +37,7 @@ function setManualProxyFormEvents() {
         getLocalStorageObject.ssl = getHttpFieldValue;
 
         // directly update http and https same value field firefox settings
-        browser.proxy.settings.set({ value: getLocalStorageObject });
+        applyProxySetting(getLocalStorageObject);
 
         let updateLocalStorage = JSON.stringify(getLocalStorageObject);
         localStorage.setItem("SwitcherManualProxyConfig", updateLocalStorage);
@@ -54,7 +54,7 @@ function setManualProxyFormEvents() {
         getLocalStorageObject.ssl = "";
 
         // directly update http and https same value field firefox settings
-        browser.proxy.settings.set({ value: getLocalStorageObject });
+        applyProxySetting(getLocalStorageObject);
 
         let updateLocalStorage = JSON.stringify(getLocalStorageObject);
         localStorage.setItem("SwitcherManualProxyConfig", updateLocalStorage);
@@ -83,7 +83,7 @@ function setManualProxyFormEvents() {
             getLocalStorageObject.socksVersion = 4;
 
             // directly update http and https same value field firefox settings
-            browser.proxy.settings.set({ value: getLocalStorageObject });
+            applyProxySetting(getLocalStorageObject);
 
             updateLocalStorage = JSON.stringify(getLocalStorageObject);
 
@@ -96,7 +96,7 @@ function setManualProxyFormEvents() {
             getLocalStorageObject.socksVersion = 5;
 
             // directly update http and https same value field firefox settings
-            browser.proxy.settings.set({ value: getLocalStorageObject });
+            applyProxySetting(getLocalStorageObject);
 
             updateLocalStorage = JSON.stringify(getLocalStorageObject);
 
@@ -147,7 +147,7 @@ function handelEventOnKeyUpOnInputItem(input) {
         }
 
         // directly update http field in the firefox settings
-        browser.proxy.settings.set({ value: getLocalStorageObject });
+        applyProxySetting(getLocalStorageObject);
 
         updateLocalStorage = JSON.stringify(getLocalStorageObject);
 
@@ -161,7 +161,7 @@ function handelEventOnKeyUpOnInputItem(input) {
         getLocalStorageObject.proxyType = "manual";
         getLocalStorageObject.ssl = getTargetValue.replaceAll(" ", "");
         // directly update https field in the firefox settings
-        browser.proxy.settings.set({ value: getLocalStorageObject });
+        applyProxySetting(getLocalStorageObject);
 
         updateLocalStorage = JSON.stringify(getLocalStorageObject);
 
@@ -173,7 +173,7 @@ function handelEventOnKeyUpOnInputItem(input) {
         getLocalStorageObject.socks = getTargetValue.replaceAll(" ", "");
 
         // directly update socks field in the firefox settings
-        browser.proxy.settings.set({ value: getLocalStorageObject });
+        applyProxySetting(getLocalStorageObject);
 
         updateLocalStorage = JSON.stringify(getLocalStorageObject);
 
@@ -202,12 +202,12 @@ function handelEventOnKeyUpOnInputItem(input) {
           systemProxySettingForBrowser.socks = "";
 
           // updating browser proxy config for system proxy
-          browser.proxy.settings.set({ value: systemProxySettingForBrowser });
+          applyProxySetting(systemProxySettingForBrowser);
         } else {
           getLocalStorageObject.proxyType = "manual";
 
           // directly update noproxy for field in the firefox settings
-          browser.proxy.settings.set({ value: getLocalStorageObject });
+          applyProxySetting(getLocalStorageObject);
 
           updateLocalStorage = JSON.stringify(getLocalStorageObject);
 

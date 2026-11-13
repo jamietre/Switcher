@@ -4,81 +4,52 @@
 // - it toggle proxy setting between system proxy and manual proxy
 browser.commands.onCommand.addListener(function (command) {
   if (command === "switch") {
-    let isSwitcherLocalStorageExist;
     browser.proxy.settings.get({}).then(function (proxyInfo) {
       switch (proxyInfo.value.proxyType) {
-        case "none":
+        case "none": {
           setBadgeText("S");
 
-          isSwitcherLocalStorageExist = localStorage.getItem(
-            "SwitcherManualProxyConfig",
-          );
+          let stored = readStoredConfig();
+          let systemProxySetting = stored
+            ? { proxyType: "system", passthrough: stored.passthrough }
+            : { proxyType: "system" };
 
-          let systemProxySetting;
-          if (!isSwitcherLocalStorageExist) {
-            systemProxySetting = {
-              proxyType: "system",
-            };
-          } else {
-            // Raw Format to Object
-            isSwitcherLocalStorageExist = JSON.parse(
-              isSwitcherLocalStorageExist,
+          applyProxySetting(systemProxySetting);
+          break;
+        }
+
+        case "system": {
+          // Resolve against Firefox's live config: this used to write an empty
+          // {http:"",ssl:"",socks:""} whenever Switcher had no stored config,
+          // silently erasing a proxy set up in Firefox's own Settings page.
+          let manualProxySetting = resolveManualConfig(proxyInfo.value);
+
+          if (!hasProxyHost(manualProxySetting)) {
+            // Nothing to switch on -- stay put rather than "enabling" a
+            // manual mode with no proxy server in it.
+            console.warn(
+              "Switcher: no manual proxy configured, staying in system mode.",
             );
-            systemProxySetting = {
-              proxyType: "system",
-              passthrough: isSwitcherLocalStorageExist.passthrough,
-            };
+            break;
           }
 
-          browser.proxy.settings.set({ value: systemProxySetting });
-          break;
-
-        case "system":
           setBadgeText("M");
+          writeStoredConfig(manualProxySetting);
+          applyProxySetting(manualProxySetting);
+          break;
+        }
 
-          // Checking LocalStorage Config is exist or not
-          isSwitcherLocalStorageExist = localStorage.getItem(
-            "SwitcherManualProxyConfig",
-          );
+        case "manual": {
+          setBadgeText("N");
 
-          let manualProxySetting;
-          if (!isSwitcherLocalStorageExist) {
-            manualProxySetting = {
-              proxyType: "manual",
-              http: "", // for http
-              ssl: "", //for https
-              socks: "", // for socks
-              socksVersion: 4, // for socks version
-              passthrough: "", // for no proxy for
-            };
-
-            // directly update http field in the firefox settings
-            browser.proxy.settings.set({ value: manualProxySetting });
-
-            localStorage.setItem(
-              "SwitcherManualProxyConfig",
-              JSON.stringify(manualProxySetting),
-            );
-          } else {
-            manualProxySetting = JSON.parse(isSwitcherLocalStorageExist);
-            manualProxySetting.proxyType = "manual";
-            localStorage.setItem(
-              "SwitcherManualProxyConfig",
-              JSON.stringify(manualProxySetting),
-            );
-            browser.proxy.settings.set({ value: manualProxySetting });
+          // Preserve the proxy we are switching away from.
+          if (!hasProxyHost(readStoredConfig())) {
+            resolveManualConfig(proxyInfo.value);
           }
 
+          applyProxySetting({ proxyType: "none" });
           break;
-
-        case "manual":
-          setBadgeText("N");
-          let noProxySetting = {
-            proxyType: "none",
-          };
-
-          browser.proxy.settings.set({ value: noProxySetting });
-          break;
+        }
 
         default:
           break;
