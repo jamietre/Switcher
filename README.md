@@ -1,3 +1,35 @@
+> ### This is a fork
+>
+> Fork of [vheidari/switcher](https://github.com/vheidari/switcher), carrying
+> fixes for Switcher's handling of proxy settings it did not configure itself.
+> It uses a **different extension ID** (`switcher-fork@jamietre.github.io`) and
+> version (`2.0.1.1`), so it installs alongside the AMO release rather than
+> replacing it, and will not be overwritten by AMO updates. Run only one of the
+> two at a time -- both write the same global Firefox proxy preferences.
+>
+> **What is fixed**
+>
+> - Switching into manual mode no longer erases a proxy configured in Firefox's
+>   own Settings > Network Settings. Switcher used to write an empty config
+>   whenever it had nothing in `localStorage`.
+> - The panel reports the proxy Firefox is actually using, read from
+>   `proxy.settings.get()` rather than Switcher's own stored copy, and labels it
+>   with the right protocol (HTTP / HTTPS / SOCKS4 / SOCKS5).
+> - Fields Switcher does not manage -- notably `proxyDNS` ("Proxy DNS when using
+>   SOCKS v5") -- are preserved instead of being reset on every switch.
+> - `proxy.settings.set()` failures are shown in the panel. Firefox rejects the
+>   call unless the add-on is allowed to run in private windows; this previously
+>   failed silently while the badge still changed.
+> - The badge follows changes made outside Switcher, and handles the
+>   `autoDetect` / `autoConfig` modes.
+> - Removed a hardcoded `127.0.0.1:2855` placeholder from the panel markup.
+>
+> Tests: `node test/proxy-config.test.js`
+>
+> **Note:** Firefox applies proxy settings browser-wide -- private and normal
+> windows share one configuration. For a separately-proxied browsing context,
+> use a second Firefox profile.
+
 # About Switcher
 ![SwitcherBanner](./switcher-images/switcher-github-banner.webp)
 

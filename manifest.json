@@ -1,13 +1,15 @@
 {
   "manifest_version": 2,
-  "name": "Switcher",
-  "version": "2.0.1",
-  "author": "Vahid Heidari",
+  "name": "Switcher (jamietre fork)",
+  "version": "2.0.1.1",
+  "author": "Vahid Heidari (fork maintained by jamietre)",
   "developer": {
     "name": "Vahid Heidari",
     "url": "https://github.com/vheidari"
   },
-  "description": "A Proxy Settings Switcher for Firefox",
+
+  "homepage_url": "https://github.com/jamietre/Switcher",
+  "description": "A Proxy Settings Switcher for Firefox. Fork of vheidari/switcher with proxy-state fixes.",
 
   "icons": {
     "32": "src/images/icons/tunnel_c_32x32.png"
@@ -26,7 +28,7 @@
 
   "browser_specific_settings": {
     "gecko": {
-      "id": "{9ad1063a-6774-4627-af9c-d9250e609efc}",
+      "id": "switcher-fork@jamietre.github.io",
       "strict_min_version": "91.1.0"
     }
   },
@@ -39,7 +41,7 @@
     "default_icon": {
       "32": "src/images/icons/tunnel_c_32x32.png"
     },
-    "default_title": "Switcher",
+    "default_title": "Switcher (fork)",
     "default_popup": "src/panel/Switcher.html"
   },
 

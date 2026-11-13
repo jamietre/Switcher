@@ -487,3 +487,18 @@ hr {
     line-height: 1.45;
     max-height: 200px;
 }
+
+/* Marks this build as the fork, so it is never confused with the AMO
+   release of the same add-on. */
+.fork-badge {
+    display: inline-block;
+    margin-left: 6px;
+    padding: 1px 5px;
+    border-radius: 3px;
+    background-color: #075389;
+    color: #fff;
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    vertical-align: middle;
+}

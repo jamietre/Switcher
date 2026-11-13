@@ -68,6 +68,7 @@ browser.omnibox.onInputStarted.addListener(function () {
 //Go to Switcher ADD-ONS home page on firefox ADD-ONS
 browser.omnibox.onInputEntered.addListener(function () {
   browser.tabs.update({
-    url: "http://addons.mozilla.org/en-US/firefox/addon/switcher_proxy/",
+    // This fork is not on AMO; point at its repository instead.
+    url: "https://github.com/jamietre/Switcher",
   });
 });
