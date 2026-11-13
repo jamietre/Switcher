@@ -40,14 +40,32 @@ function resolveManualConfig(browserValue) {
     return stored;
   }
 
-  let adopted = {
-    proxyType: "manual",
-    http: (browserValue && browserValue.http) || "",
-    ssl: (browserValue && browserValue.ssl) || "",
-    socks: (browserValue && browserValue.socks) || "",
-    socksVersion: (browserValue && browserValue.socksVersion) || 4,
-    passthrough: (browserValue && browserValue.passthrough) || "",
-  };
+  // Carry over every field Firefox's setCallback() maps to a pref. Anything
+  // left undefined here is treated as "omitted" by
+  // ExtensionPreferencesManager.setPrefs(), which RESETS the backing pref --
+  // so dropping e.g. proxyDNS would silently untick "Proxy DNS when using
+  // SOCKS v5" the first time the user switched modes.
+  let adopted = { proxyType: "manual" };
+  let source = browserValue || {};
+
+  adopted.http = source.http || "";
+  adopted.ssl = source.ssl || "";
+  adopted.socks = source.socks || "";
+  adopted.socksVersion = source.socksVersion || 4;
+  adopted.passthrough = source.passthrough || "";
+
+  for (let prop of [
+    "proxyDNS",
+    "httpProxyAll",
+    "autoConfigUrl",
+    "autoLogin",
+    "respectBeConservative",
+  ]) {
+    if (source[prop] !== undefined) {
+      adopted[prop] = source[prop];
+    }
+  }
+
   writeStoredConfig(adopted);
   return adopted;
 }
@@ -226,12 +244,9 @@ function setManualProxySetting() {
     applyProxySetting(manualProxySetting).then(function (ok) {
       if (ok) {
         writeStoredConfig(manualProxySetting);
-        // show current http proxy that is set as http
-        showCurrentHttpProxyThatIsSet(
-          manualProxySetting.http ||
-            manualProxySetting.ssl ||
-            manualProxySetting.socks,
-        );
+        // show whichever proxy is configured, labelled with its protocol
+        let active = pickActiveProxy(manualProxySetting);
+        showCurrentHttpProxyThatIsSet(active.value, active.protocol);
       }
     });
   });
@@ -411,12 +426,11 @@ function setupSwitcher(browserValue) {
       if (!hasProxyHost(readStoredConfig())) {
         resolveManualConfig(browserValue);
       }
-      showCurrentHttpProxyThatIsSet(
-        browserValue.http || browserValue.ssl || browserValue.socks,
-      );
+      let active = pickActiveProxy(browserValue);
+      showCurrentHttpProxyThatIsSet(active.value, active.protocol);
     } else {
-      let stored = readStoredConfig();
-      showCurrentHttpProxyThatIsSet(stored && stored.http);
+      let active = pickActiveProxy(readStoredConfig());
+      showCurrentHttpProxyThatIsSet(active.value, active.protocol);
     }
   } else if (proxyType == "autoDetect" || proxyType == "autoConfig") {
     // Previously these two modes fell through unhandled, leaving the badge
@@ -538,7 +552,28 @@ function setSwitcherButtonIsSet(targetId) {
   });
 }
 
-function showCurrentHttpProxyThatIsSet(httpValue) {
+// A manual config may specify an HTTP, HTTPS or SOCKS proxy. Pick whichever
+// is populated and report the protocol, so the panel does not label a SOCKS
+// proxy "HTTP PROXY IP".
+function pickActiveProxy(config) {
+  if (config) {
+    if (config.http) {
+      return { value: config.http, protocol: "HTTP" };
+    }
+    if (config.ssl) {
+      return { value: config.ssl, protocol: "HTTPS" };
+    }
+    if (config.socks) {
+      return {
+        value: config.socks,
+        protocol: "SOCKS" + (Number(config.socksVersion) === 5 ? "5" : "4"),
+      };
+    }
+  }
+  return { value: "", protocol: "HTTP" };
+}
+
+function showCurrentHttpProxyThatIsSet(httpValue, protocol) {
   // No proxy configured yet -> keep the label hidden and blank, so a stale or
   // placeholder value can never be mistaken for a live setting.
   if (!httpValue) {
@@ -556,6 +591,13 @@ function showCurrentHttpProxyThatIsSet(httpValue) {
   httpValue = httpValue.replaceAll("http://", "");
   httpValue = httpValue.replaceAll("https://", "");
   httpValue = httpValue.replaceAll("://", "");
+
+  let protocolLabel = document.getElementById(
+    "manualproxy-current-protocol-label",
+  );
+  if (protocolLabel && protocol) {
+    protocolLabel.textContent = protocol;
+  }
 
   const label = document.getElementById("manualproxy-show-current-http-proxy");
 

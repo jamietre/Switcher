@@ -115,6 +115,57 @@ console.log("\n6. applyProxySetting reports success");
   ok("passed value through", calls[0].proxyType === "none", calls);
 }
 
+console.log("\n7. resolveManualConfig preserves fields that would otherwise be reset");
+{
+  // ExtensionPreferencesManager.setPrefs() RESETS any pref whose key the
+  // setCallback omits, so dropping proxyDNS silently unticks "Proxy DNS when
+  // using SOCKS v5".
+  const { sandbox: s } = makeSandbox({ browserValue: {} });
+  const live = {
+    proxyType: "manual",
+    http: "",
+    ssl: "",
+    socks: "172.16.2.47:1080",
+    socksVersion: 5,
+    passthrough: "localhost, 127.0.0.1",
+    proxyDNS: true,
+    httpProxyAll: false,
+    autoConfigUrl: "",
+    autoLogin: false,
+    respectBeConservative: true,
+  };
+  const r = s.resolveManualConfig(live);
+  ok("keeps socks host", r.socks === "172.16.2.47:1080", r);
+  ok("keeps socksVersion 5", r.socksVersion === 5, r);
+  ok("keeps proxyDNS=true", r.proxyDNS === true, r);
+  ok("keeps httpProxyAll=false", r.httpProxyAll === false, r);
+  ok("keeps respectBeConservative", r.respectBeConservative === true, r);
+  ok("keeps passthrough", r.passthrough === "localhost, 127.0.0.1", r);
+  ok("socks-only config counts as a proxy", s.hasProxyHost(r) === true, r);
+}
+
+console.log("\n8. pickActiveProxy labels the protocol");
+{
+  const { sandbox: s } = makeSandbox({ browserValue: {} });
+  let a = s.pickActiveProxy({ http: "10.0.0.1:3128" });
+  ok("http -> HTTP", a.protocol === "HTTP" && a.value === "10.0.0.1:3128", a);
+
+  a = s.pickActiveProxy({ http: "", ssl: "10.0.0.2:3129" });
+  ok("ssl only -> HTTPS", a.protocol === "HTTPS" && a.value === "10.0.0.2:3129", a);
+
+  a = s.pickActiveProxy({ http: "", ssl: "", socks: "172.16.2.47:1080", socksVersion: 5 });
+  ok("socks v5 -> SOCKS5", a.protocol === "SOCKS5" && a.value === "172.16.2.47:1080", a);
+
+  a = s.pickActiveProxy({ socks: "1.2.3.4:1080", socksVersion: 4 });
+  ok("socks v4 -> SOCKS4", a.protocol === "SOCKS4", a);
+
+  a = s.pickActiveProxy({ http: "", ssl: "", socks: "" });
+  ok("nothing set -> empty value", a.value === "", a);
+
+  a = s.pickActiveProxy(null);
+  ok("null safe", a.value === "" && a.protocol === "HTTP", a);
+}
+
 console.log(`\n${passed} passed, ${failed} failed\n`);
 process.exit(failed ? 1 : 0);
 })();
